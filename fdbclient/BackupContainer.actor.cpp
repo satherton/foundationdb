@@ -1655,15 +1655,31 @@ public:
 
 	class BackupFile : public IBackupFile, ReferenceCounted<BackupFile> {
 	public:
-		BackupFile(std::string fileName, Reference<IAsyncFile> file, std::string finalFullPath) : IBackupFile(fileName), m_file(file), m_finalFullPath(finalFullPath) {}
+		BackupFile(std::string fileName, Reference<IAsyncFile> file, std::string finalFullPath) : IBackupFile(fileName), m_file(file), m_finalFullPath(finalFullPath) {
+			::MD5_Init(&md5);	
+		}
 
 		Future<Void> append(const void *data, int len) {
+			::MD5_Update(&md5, data, len);
 			Future<Void> r = m_file->write(data, len, m_offset);
 			m_offset += len;
 			return r;
 		}
 
 		ACTOR static Future<Void> finish_impl(Reference<BackupFile> f) {
+			Key sumBytes = makeString(16);
+			::MD5_Final(mutateString(sumBytes), &f->md5);
+			std::string sumString;
+			for(auto b : sumBytes) {
+				const char *hexchars = "0123456789abcdef";
+				sumString += hexchars[b >> 4];
+				sumString += hexchars[b & 0xF];
+			}
+			TraceEvent("BackupLocalFileFinalize")
+				.detail("Filename", f->getFileName())
+				.detail("Size", f->size())
+				.detail("MD5Sum", sumString);
+
 			wait(f->m_file->truncate(f->size()));  // Some IAsyncFile implementations extend in whole block sizes.
 			wait(f->m_file->sync());
 			std::string name = f->m_file->getFilename();
@@ -1682,6 +1698,7 @@ public:
 	private:
 		Reference<IAsyncFile> m_file;
 		std::string m_finalFullPath;
+		MD5_CTX md5;
 	};
 
 	Future<Reference<IBackupFile>> writeFile(std::string path) final {
