@@ -112,7 +112,7 @@ ACTOR Future<Void> moveKeySelectorOverRangeActor(const SpecialKeyRangeBaseImpl* 
 // Boundary is the range of the legal key space, which, by default is the range of the module
 // And (\xff\xff, \xff\xff\xff) if SPECIAL_KEY_SPACE_RELAXED is turned on
 ACTOR Future<Void> normalizeKeySelectorActor(SpecialKeySpace* sks, ReadYourWritesTransaction* ryw, KeySelector* ks,
-                                             KeyRangeRef boundary, int* actualOffset,
+                                             KeyRangeRef boundary,
                                              Standalone<RangeResultRef>* result,
                                              Optional<Standalone<RangeResultRef>>* cache) {
 	state RangeMap<Key, SpecialKeyRangeBaseImpl*, KeyRangeRef>::Iterator iter =
@@ -124,7 +124,6 @@ ACTOR Future<Void> normalizeKeySelectorActor(SpecialKeySpace* sks, ReadYourWrite
 		}
 		ks->offset < 1 ? --iter : ++iter;
 	}
-	*actualOffset = ks->offset;
 	if (iter->begin() == boundary.begin || iter->begin() == boundary.end) ks->setKey(iter->begin());
 
 	if (!ks->isFirstGreaterOrEqual()) {
@@ -190,11 +189,11 @@ ACTOR Future<Standalone<RangeResultRef>> SpecialKeySpace::getRangeAggregationAct
 		}
 	}
 
-	wait(normalizeKeySelectorActor(sks, ryw, &begin, moduleBoundary, &actualBeginOffset, &result, &cache));
-	wait(normalizeKeySelectorActor(sks, ryw, &end, moduleBoundary, &actualEndOffset, &result, &cache));
+	wait(normalizeKeySelectorActor(sks, ryw, &begin, moduleBoundary, &result, &cache));
+	wait(normalizeKeySelectorActor(sks, ryw, &end, moduleBoundary, &result, &cache));
 	// Handle all corner cases like what RYW does
 	// return if range inverted
-	if (actualBeginOffset >= actualEndOffset && begin.getKey() >= end.getKey()) {
+	if (begin.offset >= end.offset && begin.getKey() >= end.getKey()) {
 		TEST(true);
 		return RangeResultRef(false, false);
 	}
